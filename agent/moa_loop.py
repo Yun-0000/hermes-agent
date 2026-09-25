@@ -346,14 +346,20 @@ def _maybe_apply_moa_cache_control(
 def _price_reference_response(
     response: Any, slot: dict[str, Any], runtime: dict[str, Any]
 ) -> tuple[Any, Any, str | None, str | None]:
-    """Normalize a reference's usage with the slot's OWN provider/api_mode and price it
-    at its own rate (hence fan-out cost is summed in dollars). Never raises."""
+    """Price one advisor response at the slot's own rate. Never raises.
+
+    ``call_llm`` rebuilds every provider payload into Chat Completions usage
+    (``prompt_tokens`` / ``completion_tokens``). Normalizing that object with
+    the slot's native Codex or Anthropic shape reads fields that are not
+    there, so every bucket is 0 and advisor spend never reaches the session.
+    The slot provider is still used for the dollar rate below.
+    """
     from agent.usage_pricing import estimate_usage_cost, normalize_usage
     usage = CanonicalUsage()
     raw_usage = getattr(response, "usage", None)
     if raw_usage:
         with contextlib.suppress(Exception):  # pragma: no cover - defensive
-            usage = normalize_usage(raw_usage, provider=runtime.get("provider"), api_mode=runtime.get("api_mode"))
+            usage = normalize_usage(raw_usage, api_mode="chat_completions")
     try:
         cost = estimate_usage_cost(
             slot.get("model") or "", usage, provider=runtime.get("provider"),
