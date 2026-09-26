@@ -2062,6 +2062,50 @@ describe('overlayConcurrentMessageChanges', () => {
 
     expect(overlayConcurrentMessageChanges(page, [page[0]], [page[0], errored]).at(-1)).toBe(errored)
   })
+
+  it('drops a settled live row when its text only drifted from the committed reply (#123993)', () => {
+    const page = [
+      msg('3-user', 'user', 'prompt b', { rowId: 3 }),
+      msg('4-assistant', 'assistant', 'A2 finished while away', { rowId: 4 })
+    ]
+
+    const lagging = overlayConcurrentMessageChanges(
+      page,
+      [],
+      [page[0], msg('assistant-stream-1-2', 'assistant', 'A2 finished', { pending: false })]
+    )
+
+    expect(lagging.map(message => [message.id, chatMessageText(message)])).toEqual([
+      ['3-user', 'prompt b'],
+      ['4-assistant', 'A2 finished while away']
+    ])
+
+    const ahead = overlayConcurrentMessageChanges(
+      page,
+      [],
+      [page[0], msg('assistant-stream-1-2', 'assistant', 'A2 finished while away and then more', { pending: false })]
+    )
+
+    expect(ahead.map(message => [message.id, chatMessageText(message)])).toEqual([
+      ['3-user', 'prompt b'],
+      ['4-assistant', 'A2 finished while away']
+    ])
+  })
+
+  it('still appends a settled live row that is not that committed reply (#123993)', () => {
+    const page = [
+      msg('3-user', 'user', 'prompt b', { rowId: 3 }),
+      msg('4-assistant', 'assistant', 'A2 finished while away', { rowId: 4 })
+    ]
+
+    const other = msg('assistant-stream-1-2', 'assistant', 'A completely different reply', { pending: false })
+
+    expect(overlayConcurrentMessageChanges(page, [], [page[0], other]).map(message => message.id)).toEqual([
+      '3-user',
+      '4-assistant',
+      'assistant-stream-1-2'
+    ])
+  })
 })
 
 describe('preserveEquivalentTranscript', () => {
