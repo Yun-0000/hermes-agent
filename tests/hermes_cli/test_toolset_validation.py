@@ -208,3 +208,41 @@ def test_populated_platforms_produce_no_empty_list_warning():
     cfg = {"cli": ["hermes-cli"], "telegram": ["hermes-telegram"]}
     warnings = validate_platform_toolsets(cfg, _is_valid)
     assert warnings == []
+
+
+def test_registered_plugin_bundle_validates_like_it_resolves():
+    """A plugin platform's synthetic ``hermes-<platform>`` name is what setup writes.
+
+    ``resolve_toolset`` already returns that bundle once the platform is registered.
+    Validation has to agree, or migration warns that the name is unknown and then
+    suggests the same name (#123992).
+    """
+    from gateway.platform_registry import PlatformEntry, platform_registry
+    from toolsets import TOOLSETS, resolve_toolset, validate_toolset
+
+    platform = "implicit_bundle_platform"
+    bundle = f"hermes-{platform}"
+    assert bundle not in TOOLSETS
+
+    platform_registry.register(
+        PlatformEntry(
+            name=platform,
+            label="Implicit Bundle Platform",
+            adapter_factory=lambda _config: object(),
+            check_fn=lambda: True,
+        )
+    )
+    try:
+        resolved = resolve_toolset(bundle)
+        assert resolved
+        assert validate_toolset(bundle) is True
+        assert validate_platform_toolsets({platform: [bundle]}, validate_toolset) == []
+
+        warnings = validate_platform_toolsets({platform: ["not-a-toolset"]}, validate_toolset)
+        assert any("unknown toolset 'not-a-toolset'" in warning for warning in warnings)
+        assert all("did you mean 'not-a-toolset'" not in warning for warning in warnings)
+        assert any(f"did you mean '{bundle}'" in warning for warning in warnings)
+    finally:
+        platform_registry.unregister(platform)
+
+    assert validate_toolset(bundle) is False
